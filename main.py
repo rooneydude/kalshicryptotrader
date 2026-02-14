@@ -253,8 +253,11 @@ class TradingBot:
             except Exception as e:
                 failed += 1
                 if not last_error:
-                    last_error = f" (e.g. {ticker}: {type(e).__name__}: {str(e)[:120]})"
-        log.info("Orderbooks polled: %d updated, %d failed%s", updated, failed, last_error)
+                    last_error = f" ({ticker}: {type(e).__name__}: {str(e)[:200]})"
+        if updated > 0:
+            log.info("Orderbooks polled: %d updated, %d failed", updated, failed)
+        elif failed > 0:
+            log.warning("Orderbooks polled: 0 updated, %d failed%s", failed, last_error)
 
     async def _scan_markets(self) -> None:
         """Discover new crypto markets and update watch list."""

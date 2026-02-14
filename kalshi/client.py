@@ -278,20 +278,26 @@ class KalshiClient:
         # Normalize field names
         parsed: dict[str, Any] = {"ticker": ticker}
 
-        # Handle both "yes" and "yes_bids" key names
-        if "yes" in ob_data:
-            parsed["yes_bids"] = ob_data["yes"]
-        elif "yes_bids" in ob_data:
-            parsed["yes_bids"] = ob_data["yes_bids"]
-        else:
-            parsed["yes_bids"] = []
+        def _normalize_levels(raw_levels: list) -> list[list[float]]:
+            """Convert API levels to [[price, qty], ...] regardless of format."""
+            result = []
+            for level in raw_levels:
+                if isinstance(level, (list, tuple)):
+                    result.append([float(level[0]), float(level[1])])
+                elif isinstance(level, dict):
+                    p = float(level.get("price", level.get("p", 0)))
+                    q = float(level.get("quantity", level.get("q", level.get("size", 0))))
+                    result.append([p, q])
+                else:
+                    log.warning("Unknown orderbook level format: %s", type(level))
+            return result
 
-        if "no" in ob_data:
-            parsed["no_bids"] = ob_data["no"]
-        elif "no_bids" in ob_data:
-            parsed["no_bids"] = ob_data["no_bids"]
-        else:
-            parsed["no_bids"] = []
+        # Handle both "yes" and "yes_bids" key names
+        raw_yes = ob_data.get("yes") or ob_data.get("yes_bids") or []
+        raw_no = ob_data.get("no") or ob_data.get("no_bids") or []
+
+        parsed["yes_bids"] = _normalize_levels(raw_yes)
+        parsed["no_bids"] = _normalize_levels(raw_no)
 
         return OrderBook.model_validate(parsed)
 
