@@ -243,16 +243,24 @@ class PriceFeed:
     # Internal
     # ------------------------------------------------------------------
 
+    # Fallback WebSocket URLs (tried in order if primary fails)
+    FALLBACK_WS_URLS: list[str] = [
+        "wss://stream.binance.us:9443/ws",    # Binance.US (works from US servers)
+        "wss://stream.binance.com:9443/ws",   # Binance Global
+    ]
+
     async def _listen_loop(self, url: str) -> None:
-        """Listen for trade messages with auto-reconnect."""
+        """Listen for trade messages with auto-reconnect and URL fallback."""
         reconnect_delay = config.PRICE_FEED_RECONNECT_SEC
+        current_url = url
+        fallback_index = 0
 
         while self._running:
             try:
-                async with websockets.connect(url) as ws:
+                async with websockets.connect(current_url) as ws:
                     self._connection = ws
                     reconnect_delay = config.PRICE_FEED_RECONNECT_SEC
-                    log.info("Binance WebSocket connected")
+                    log.info("Price feed WebSocket connected: %s", current_url)
 
                     async for raw_message in ws:
                         if not self._running:
@@ -261,15 +269,35 @@ class PriceFeed:
                             data = json.loads(raw_message)
                             self._handle_trade(data)
                         except json.JSONDecodeError:
-                            log.warning("Non-JSON from Binance: %s", str(raw_message)[:100])
+                            log.warning("Non-JSON from price feed: %s", str(raw_message)[:100])
 
             except asyncio.CancelledError:
                 break
-            except Exception:
-                log.exception(
-                    "Binance WS error — reconnecting in %ds", reconnect_delay
-                )
+            except Exception as exc:
                 self._connection = None
+                exc_str = str(exc)
+
+                # HTTP 451 = geo-blocked, try fallback immediately
+                if "451" in exc_str or "403" in exc_str:
+                    if fallback_index < len(self.FALLBACK_WS_URLS):
+                        streams = "/".join(self.STREAMS.values())
+                        fallback_base = self.FALLBACK_WS_URLS[fallback_index]
+                        current_url = f"{fallback_base}/{streams}"
+                        fallback_index += 1
+                        log.warning(
+                            "Price feed geo-blocked — trying fallback: %s",
+                            fallback_base,
+                        )
+                        continue
+                    else:
+                        log.error("All price feed URLs exhausted — retrying from start")
+                        fallback_index = 0
+                        streams = "/".join(self.STREAMS.values())
+                        current_url = url  # Reset to primary
+
+                log.exception(
+                    "Price feed WS error — reconnecting in %ds", reconnect_delay
+                )
                 await asyncio.sleep(reconnect_delay)
                 reconnect_delay = min(reconnect_delay * 2, 60)
 
