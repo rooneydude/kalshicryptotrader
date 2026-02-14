@@ -22,7 +22,12 @@ log = get_logger("kalshi.auth")
 
 def load_private_key(file_path: str) -> RSAPrivateKey:
     """
-    Load an RSA private key from a PEM file.
+    Load an RSA private key from a PEM file, or from the KALSHI_PRIVATE_KEY_B64
+    environment variable (base64-encoded PEM, for containerised deployments).
+
+    If KALSHI_PRIVATE_KEY_B64 is set, it takes priority over the file path.
+    This allows Railway / Docker deployments to inject the key as an env var
+    instead of baking a .pem file into the image.
 
     Args:
         file_path: Path to the PEM file containing the private key.
@@ -31,24 +36,37 @@ def load_private_key(file_path: str) -> RSAPrivateKey:
         An RSAPrivateKey instance.
 
     Raises:
-        FileNotFoundError: If the PEM file does not exist.
-        ValueError: If the PEM file is not a valid RSA private key.
+        FileNotFoundError: If no env var is set and the PEM file does not exist.
+        ValueError: If the key data is not a valid RSA private key.
     """
-    path = Path(file_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Private key file not found: {file_path}")
+    import os
 
-    pem_data = path.read_bytes()
+    key_b64 = os.getenv("KALSHI_PRIVATE_KEY_B64")
+
+    if key_b64:
+        log.debug("Loading RSA private key from KALSHI_PRIVATE_KEY_B64 env var")
+        try:
+            pem_data = base64.b64decode(key_b64)
+        except Exception as exc:
+            raise ValueError(f"KALSHI_PRIVATE_KEY_B64 is not valid base64: {exc}") from exc
+    else:
+        path = Path(file_path)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Private key file not found: {file_path}\n"
+                "Tip: set KALSHI_PRIVATE_KEY_B64 env var for containerised deployments."
+            )
+        pem_data = path.read_bytes()
+        log.debug("Loaded RSA private key from %s", file_path)
 
     try:
         private_key = serialization.load_pem_private_key(pem_data, password=None)
     except Exception as exc:
-        raise ValueError(f"Failed to load RSA private key from {file_path}: {exc}") from exc
+        raise ValueError(f"Failed to load RSA private key: {exc}") from exc
 
     if not isinstance(private_key, rsa.RSAPrivateKey):
-        raise ValueError(f"Key in {file_path} is not an RSA private key")
+        raise ValueError("Loaded key is not an RSA private key")
 
-    log.debug("Loaded RSA private key from %s", file_path)
     return private_key
 
 

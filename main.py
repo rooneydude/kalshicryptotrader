@@ -438,18 +438,20 @@ class TradingBot:
 
         # 7. Print session summary
         elapsed = time.time() - self._session_start
-        summary = self.position_tracker.get_portfolio_summary()
-
-        log.info("=" * 60)
-        log.info("SESSION SUMMARY")
-        log.info("  Duration: %.1f minutes", elapsed / 60)
-        log.info("  Trades today: %d", summary["trades_today"])
-        log.info("  Realized P&L: $%.2f", summary["realized_pnl"])
-        log.info("  Unrealized P&L: $%.2f", summary["unrealized_pnl"])
-        log.info("  Total P&L: $%.2f", summary["total_pnl"])
-        log.info("  Total fees: $%.2f", summary["total_fees"])
-        log.info("  Active positions: %d", summary["active_positions"])
-        log.info("=" * 60)
+        if self.position_tracker is not None:
+            summary = self.position_tracker.get_portfolio_summary()
+            log.info("=" * 60)
+            log.info("SESSION SUMMARY")
+            log.info("  Duration: %.1f minutes", elapsed / 60)
+            log.info("  Trades today: %d", summary["trades_today"])
+            log.info("  Realized P&L: $%.2f", summary["realized_pnl"])
+            log.info("  Unrealized P&L: $%.2f", summary["unrealized_pnl"])
+            log.info("  Total P&L: $%.2f", summary["total_pnl"])
+            log.info("  Total fees: $%.2f", summary["total_fees"])
+            log.info("  Active positions: %d", summary["active_positions"])
+            log.info("=" * 60)
+        else:
+            log.info("Bot shut down before initialization completed (%.1f seconds)", elapsed)
 
 
 async def main() -> None:
