@@ -382,11 +382,12 @@ class TradingBot:
         self._running = False
 
         # 1. Cancel all resting orders
-        try:
-            count = await self.order_manager.cancel_all_orders()
-            log.info("Cancelled %d resting orders", count)
-        except Exception:
-            log.exception("Failed to cancel orders during shutdown")
+        if self.order_manager is not None:
+            try:
+                count = await self.order_manager.cancel_all_orders()
+                log.info("Cancelled %d resting orders", count)
+            except Exception:
+                log.exception("Failed to cancel orders during shutdown")
 
         # 2. Close WebSocket connections
         if self.ws_client:
@@ -410,15 +411,16 @@ class TradingBot:
                 pass
 
         # 5. Export final trade log
-        try:
-            self.position_tracker.export_trades_csv(
-                f"./logs/trades_{self._session_id}_final.csv"
-            )
-        except Exception:
-            pass
+        if self.position_tracker is not None:
+            try:
+                self.position_tracker.export_trades_csv(
+                    f"./logs/trades_{self._session_id}_final.csv"
+                )
+            except Exception:
+                pass
 
         # 6. Close results tracker
-        if self.results_tracker:
+        if self.results_tracker and self.position_tracker is not None:
             try:
                 summary = self.position_tracker.get_portfolio_summary()
                 self.results_tracker.end_session(
