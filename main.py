@@ -244,15 +244,17 @@ class TradingBot:
         """Poll orderbooks for all watched markets via REST."""
         updated = 0
         failed = 0
+        last_error = ""
         for ticker in self._watched_tickers[:20]:  # Limit to avoid rate limits
             try:
                 ob = await self.client.get_orderbook(ticker)
                 self.orderbook_manager.update_from_rest(ticker, ob)
                 updated += 1
-            except Exception:
+            except Exception as e:
                 failed += 1
-        if updated > 0 or failed > 0:
-            log.info("Orderbooks polled: %d updated, %d failed", updated, failed)
+                if not last_error:
+                    last_error = f" (e.g. {ticker}: {type(e).__name__}: {str(e)[:120]})"
+        log.info("Orderbooks polled: %d updated, %d failed%s", updated, failed, last_error)
 
     async def _scan_markets(self) -> None:
         """Discover new crypto markets and update watch list."""
