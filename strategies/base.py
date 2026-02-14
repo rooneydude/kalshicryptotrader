@@ -105,15 +105,21 @@ class BaseStrategy(ABC):
             signals = await self.scan()
 
             if not signals:
-                log.debug("[%s] No signals found", self.name)
+                log.info("[%s] Scan complete — no signals", self.name)
                 return
 
-            log.info("[%s] Found %d signal(s)", self.name, len(signals))
+            log.info("[%s] Found %d signal(s):", self.name, len(signals))
+            for sig in signals:
+                log.info(
+                    "  → %s %s %s @ $%.2f, edge=%.1fc, qty=%d",
+                    sig.side, sig.ticker, sig.strategy, sig.price,
+                    sig.edge * 100 if sig.edge else 0, sig.quantity,
+                )
 
             approved = self.risk_manager.filter_signals(signals)
 
             if not approved:
-                log.debug("[%s] No signals passed risk filter", self.name)
+                log.info("[%s] %d signal(s) blocked by risk manager", self.name, len(signals))
                 return
 
             log.info("[%s] Executing %d approved signal(s)", self.name, len(approved))
