@@ -239,6 +239,12 @@ class FifteenMinMomentumStrategy(BaseStrategy):
         )
 
         if max_contracts <= 0:
+            log.info(
+                "[%s] %s: max_contracts=0 (limit=%d, ask_qty=%d, capital_limit=%d), REJECT",
+                self.name, market.ticker,
+                config.FIFTEEN_MIN_MAX_CONTRACTS, ask_qty,
+                int(self.risk_manager.get_available_capital() * config.MAX_SINGLE_TRADE_PCT / ask_price) if ask_price > 0 else 0,
+            )
             return None
 
         # Fee check
@@ -248,8 +254,8 @@ class FifteenMinMomentumStrategy(BaseStrategy):
         net_edge_cents = net_edge * 100
 
         if net_edge_cents < config.FIFTEEN_MIN_MIN_EDGE_CENTS:
-            log.debug(
-                "[%s] %s %s: edge=%.1fc after fees < min %dc",
+            log.info(
+                "[%s] %s %s: edge=%.1fc after fees < min %dc, REJECT",
                 self.name, market.ticker, side, net_edge_cents,
                 config.FIFTEEN_MIN_MIN_EDGE_CENTS,
             )
@@ -258,8 +264,8 @@ class FifteenMinMomentumStrategy(BaseStrategy):
         # Check minimum momentum threshold
         abs_momentum = abs(momentum)
         if abs_momentum < config.FIFTEEN_MIN_MIN_MOMENTUM_PCT / 100:
-            log.debug(
-                "[%s] %s: momentum=%.4f%% < min %.4f%%",
+            log.info(
+                "[%s] %s: momentum=%.4f%% < min %.2f%%, REJECT",
                 self.name, market.ticker, abs_momentum * 100,
                 config.FIFTEEN_MIN_MIN_MOMENTUM_PCT,
             )
@@ -280,6 +286,12 @@ class FifteenMinMomentumStrategy(BaseStrategy):
             entry_cents = int(ask_price * 100)
 
         direction = "UP" if side == "yes" else "DOWN"
+
+        log.info(
+            "[%s] SIGNAL BUILT: %s %s %s x%d @ %dc, edge=%.1fc",
+            self.name, market.ticker, side, action,
+            max_contracts, entry_cents, net_edge_cents,
+        )
 
         return TradeSignal(
             strategy=self.name,
