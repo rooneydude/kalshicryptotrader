@@ -116,17 +116,18 @@ class FifteenMinMomentumStrategy(BaseStrategy):
         # 3. Get the floor strike (price to beat)
         floor_strike = MarketScanner.get_floor_strike_from_market(market)
         if floor_strike is None or floor_strike <= 0:
-            log.debug("[%s] No floor_strike for %s", self.name, market.ticker)
+            log.info("[%s] No floor_strike for %s", self.name, market.ticker)
             return None
 
         # 4. Calculate time remaining
         time_left_sec = self._get_seconds_to_close(market)
         if time_left_sec is None:
+            log.info("[%s] No close_time for %s", self.name, market.ticker)
             return None
 
         # Don't trade if too little time left (< 2 min)
         if time_left_sec < config.FIFTEEN_MIN_MIN_TIME_LEFT_SEC:
-            log.debug(
+            log.info(
                 "[%s] %s: only %ds left, skipping (min=%ds)",
                 self.name, market.ticker, time_left_sec,
                 config.FIFTEEN_MIN_MIN_TIME_LEFT_SEC,
@@ -136,7 +137,7 @@ class FifteenMinMomentumStrategy(BaseStrategy):
         # Don't trade if market has been open too long (> 10 min)
         time_since_open = self._get_seconds_since_open(market)
         if time_since_open is not None and time_since_open > config.FIFTEEN_MIN_MAX_ENTRY_AGE_SEC:
-            log.debug(
+            log.info(
                 "[%s] %s: opened %ds ago, too stale",
                 self.name, market.ticker, time_since_open,
             )
@@ -178,6 +179,14 @@ class FifteenMinMomentumStrategy(BaseStrategy):
         best_yes_ask = self.orderbook.get_best_yes_ask(market.ticker)
         best_yes_bid = self.orderbook.get_best_yes_bid(market.ticker)
         best_no_ask = self._get_best_no_ask(market.ticker)
+
+        log.info(
+            "[%s] %s orderbook: yes_ask=%s, yes_bid=%s, no_ask=%s",
+            self.name, market.ticker,
+            f"${best_yes_ask[0]:.2f}x{best_yes_ask[1]}" if best_yes_ask else "None",
+            f"${best_yes_bid[0]:.2f}x{best_yes_bid[1]}" if best_yes_bid else "None",
+            f"${best_no_ask[0]:.2f}x{best_no_ask[1]}" if best_no_ask else "None",
+        )
 
         # 10. Determine the best trade direction
         signal = None
