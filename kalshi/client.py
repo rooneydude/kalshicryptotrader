@@ -279,17 +279,30 @@ class KalshiClient:
         parsed: dict[str, Any] = {"ticker": ticker}
 
         def _normalize_levels(raw_levels: list) -> list[list[float]]:
-            """Convert API levels to [[price, qty], ...] regardless of format."""
+            """Convert API levels to [[price_dollars, qty], ...] regardless of format.
+
+            The Kalshi API returns prices in cents (1-99). We convert to
+            dollars (0.01 - 0.99) so that all internal code can use a
+            consistent 0-1 dollar scale.
+            """
             result = []
             for level in raw_levels:
                 if isinstance(level, (list, tuple)):
-                    result.append([float(level[0]), float(level[1])])
+                    p = float(level[0])
+                    q = float(level[1])
                 elif isinstance(level, dict):
                     p = float(level.get("price", level.get("p", 0)))
                     q = float(level.get("quantity", level.get("q", level.get("size", 0))))
-                    result.append([p, q])
                 else:
                     log.warning("Unknown orderbook level format: %s", type(level))
+                    continue
+
+                # Convert cents → dollars if price > 1 (heuristic: dollar
+                # prices are in 0-1 range, cent prices are in 1-99 range)
+                if p > 1.0:
+                    p = p / 100.0
+
+                result.append([p, q])
             return result
 
         # Handle both "yes" and "yes_bids" key names
