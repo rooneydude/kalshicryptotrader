@@ -228,22 +228,26 @@ class FifteenMinMomentumStrategy(BaseStrategy):
         """Build a trade signal after fee/sizing checks."""
 
         # Calculate contracts (limited by config and available capital)
+        # For 15-min markets, always allow at least 1 contract if we have the funds
+        available_cap = self.risk_manager.get_available_capital()
+        capital_limit = int(available_cap * config.MAX_SINGLE_TRADE_PCT / ask_price) if ask_price > 0 else 0
+
+        # Ensure at least 1 contract if we have enough cash for it
+        if capital_limit <= 0 and available_cap >= ask_price:
+            capital_limit = 1
+
         max_contracts = min(
             config.FIFTEEN_MIN_MAX_CONTRACTS,
             ask_qty,
-            int(
-                self.risk_manager.get_available_capital()
-                * config.MAX_SINGLE_TRADE_PCT
-                / ask_price
-            ) if ask_price > 0 else 0,
+            capital_limit,
         )
 
         if max_contracts <= 0:
             log.info(
-                "[%s] %s: max_contracts=0 (limit=%d, ask_qty=%d, capital_limit=%d), REJECT",
+                "[%s] %s: max_contracts=0 (limit=%d, ask_qty=%d, cap_limit=%d, avail=$%.2f), REJECT",
                 self.name, market.ticker,
                 config.FIFTEEN_MIN_MAX_CONTRACTS, ask_qty,
-                int(self.risk_manager.get_available_capital() * config.MAX_SINGLE_TRADE_PCT / ask_price) if ask_price > 0 else 0,
+                capital_limit, available_cap,
             )
             return None
 
@@ -262,12 +266,15 @@ class FifteenMinMomentumStrategy(BaseStrategy):
             return None
 
         # Check minimum momentum threshold
+        # Allow trades with large edge (>10c) even without momentum data,
+        # since the base fair value alone can provide enough edge.
         abs_momentum = abs(momentum)
-        if abs_momentum < config.FIFTEEN_MIN_MIN_MOMENTUM_PCT / 100:
+        large_edge = net_edge_cents >= 10.0
+        if not large_edge and abs_momentum < config.FIFTEEN_MIN_MIN_MOMENTUM_PCT / 100:
             log.info(
-                "[%s] %s: momentum=%.4f%% < min %.2f%%, REJECT",
+                "[%s] %s: momentum=%.4f%% < min %.2f%% and edge=%.1fc < 10c, REJECT",
                 self.name, market.ticker, abs_momentum * 100,
-                config.FIFTEEN_MIN_MIN_MOMENTUM_PCT,
+                config.FIFTEEN_MIN_MIN_MOMENTUM_PCT, net_edge_cents,
             )
             return None
 
