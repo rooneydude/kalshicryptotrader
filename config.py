@@ -93,22 +93,22 @@ MM_SPREAD_CENTS: int = 4                 # Target 4c spread (2c each side of fai
 MM_MAX_NET_POSITION: int = 500           # Max 500 contracts net long or short
 MM_HEDGE_TRIGGER: int = 200              # Hedge when net > 200 contracts
 MM_QUOTE_SIZE: int = 50                  # 50 contracts per quote
-MM_REQUOTE_INTERVAL_SEC: int = 10        # Refresh quotes every 10 seconds
+MM_REQUOTE_INTERVAL_SEC: int = 3         # Refresh quotes every 3 seconds
 MM_CANCEL_ON_MOVE_PCT: float = 0.02      # Cancel all if BTC moves > 2% in 30 min
 MM_MIN_VOLUME_24H: int = 10000           # Only make markets with 24h vol > 10K
 
 # --- Strategy 3: Cross-Strike Arb ---
 ARB_MIN_PROFIT_CENTS: int = 2            # Minimum 2c profit per contract after fees
 ARB_MAX_CONTRACTS: int = 100             # Max contracts per arb leg
-ARB_SCAN_INTERVAL_SEC: int = 15          # Scan for arbs every 15 seconds
+ARB_SCAN_INTERVAL_SEC: int = 5           # Scan for arbs every 5 seconds
 
 # --- Polling & Rate Limits ---
-ORDERBOOK_POLL_INTERVAL_SEC: int = 2     # Poll orderbooks every 2 seconds
+ORDERBOOK_POLL_INTERVAL_SEC: int = 1     # Poll orderbooks every 1 second (parallel)
 MARKET_SCAN_INTERVAL_SEC: int = 60       # Scan for new markets every 60 seconds
 PRICE_FEED_RECONNECT_SEC: int = 5        # Reconnect WebSocket after 5 seconds
 API_MAX_RETRIES: int = 3                 # Max retries for API calls
 API_RETRY_BASE_DELAY: float = 1.0        # Base delay for exponential backoff
-API_RATE_LIMIT_PER_SEC: float = 10.0     # Max requests per second
+API_RATE_LIMIT_PER_SEC: float = 25.0     # Max requests per second (increased for speed)
 
 # --- Paths ---
 PROJECT_ROOT: Path = Path(__file__).parent

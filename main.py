@@ -191,26 +191,26 @@ class TradingBot:
             try:
                 now = time.time()
 
-                # Every 2 seconds: orderbook poll + price update
+                # Every 1 second: orderbook poll (parallel) + price update
                 if now - last_orderbook_poll >= config.ORDERBOOK_POLL_INTERVAL_SEC:
                     await self._poll_orderbooks()
                     self._update_position_prices()
                     last_orderbook_poll = now
 
-                # Every 10 seconds: market maker
+                # Every 3 seconds: market maker
                 if now - last_mm_run >= config.MM_REQUOTE_INTERVAL_SEC:
                     await self._run_safe(self.market_maker.run_once, "market_maker")
                     await self._run_safe(self.market_maker.manage_inventory, "mm_inventory")
                     await self._run_safe(self.market_maker.check_kill_switch, "mm_killswitch")
                     last_mm_run = now
 
-                # Every 15 seconds: cross-strike arb
+                # Every 5 seconds: cross-strike arb
                 if now - last_arb_run >= config.ARB_SCAN_INTERVAL_SEC:
                     await self._run_safe(self.cross_strike_arb.run_once, "cross_strike_arb")
                     last_arb_run = now
 
-                # Every 30 seconds: momentum scalp
-                if now - last_scalp_run >= 30:
+                # Every 10 seconds: momentum scalp
+                if now - last_scalp_run >= 10:
                     await self._run_safe(self.momentum_scalp.run_once, "momentum_scalp")
                     last_scalp_run = now
 
@@ -227,8 +227,8 @@ class TradingBot:
                     self._export_trades()
                     last_trade_export = now
 
-                # Sleep to avoid busy-waiting (1 second tick)
-                await asyncio.sleep(1.0)
+                # Sleep to avoid busy-waiting (0.5 second tick)
+                await asyncio.sleep(0.5)
 
             except asyncio.CancelledError:
                 break
@@ -242,22 +242,28 @@ class TradingBot:
 
     async def _poll_orderbooks(self) -> None:
         """Poll orderbooks for all watched markets via REST."""
-        updated = 0
-        failed = 0
-        last_error = ""
-        for ticker in self._watched_tickers[:20]:  # Limit to avoid rate limits
+        tickers = self._watched_tickers[:20]  # Limit to avoid rate limits
+        if not tickers:
+            return
+
+        async def _fetch_one(ticker: str) -> tuple[str, bool, str]:
             try:
                 ob = await self.client.get_orderbook(ticker)
                 self.orderbook_manager.update_from_rest(ticker, ob)
-                updated += 1
+                return (ticker, True, "")
             except Exception as e:
-                failed += 1
-                if not last_error:
-                    last_error = f" ({ticker}: {type(e).__name__}: {str(e)[:200]})"
+                return (ticker, False, f"{type(e).__name__}: {str(e)[:120]}")
+
+        results = await asyncio.gather(*[_fetch_one(t) for t in tickers])
+
+        updated = sum(1 for _, ok, _ in results if ok)
+        failed = sum(1 for _, ok, _ in results if not ok)
+        first_err = next((err for _, ok, err in results if not ok and err), "")
+
         if updated > 0:
-            log.info("Orderbooks polled: %d updated, %d failed", updated, failed)
+            log.info("Orderbooks polled: %d updated, %d failed (parallel)", updated, failed)
         elif failed > 0:
-            log.warning("Orderbooks polled: 0 updated, %d failed%s", failed, last_error)
+            log.warning("Orderbooks: 0 updated, %d failed (%s)", failed, first_err)
 
     async def _scan_markets(self) -> None:
         """Discover new crypto markets and update watch list."""
