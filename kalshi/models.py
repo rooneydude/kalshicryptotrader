@@ -55,6 +55,14 @@ class Market(BaseModel):
     rules_primary: str = ""
     rules_secondary: str = ""
 
+    # 15-min up/down market fields
+    yes_sub_title: str = ""
+    no_sub_title: str = ""
+    floor_strike: float | None = None
+    cap_strike: float | None = None
+    market_type: str = ""  # "binary" for 15-min up/down
+    strike_type: str = ""  # "greater_or_equal" for 15-min up/down
+
     model_config = ConfigDict(extra="allow")
 
 

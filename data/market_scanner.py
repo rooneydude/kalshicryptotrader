@@ -51,14 +51,13 @@ class MarketScanner:
         """
         all_markets: list[Market] = []
 
-        for series in config.CRYPTO_SERIES_TICKERS:
-            # Apply timeframe filtering
-            if timeframe != "all":
-                if timeframe == "15min" and series != "KXBTCUD":
-                    continue
-                if timeframe in ("hourly", "daily") and series == "KXBTCUD":
-                    continue
+        series_to_scan = config.ALL_CRYPTO_SERIES
+        if timeframe == "15min":
+            series_to_scan = config.CRYPTO_15M_SERIES_TICKERS
+        elif timeframe in ("hourly", "daily"):
+            series_to_scan = config.CRYPTO_SERIES_TICKERS
 
+        for series in series_to_scan:
             try:
                 markets = await self._client.get_all_markets(
                     series_ticker=series,
@@ -175,16 +174,22 @@ class MarketScanner:
     @staticmethod
     def classify_market_type(market: Market) -> str:
         """
-        Classify a market as "above", "below", "range", or "up_down".
+        Classify a market as "above", "below", "range", "up_down", or "fifteen_min".
 
         Args:
             market: A Kalshi Market object.
 
         Returns:
-            One of "above", "below", "range", "up_down".
+            One of "above", "below", "range", "up_down", "fifteen_min".
         """
+        # Check for 15-minute up/down markets first (KXBTC15M, KXETH15M, KXSOL15M)
+        if any(market.ticker.startswith(s) for s in config.CRYPTO_15M_SERIES_TICKERS):
+            return "fifteen_min"
+
         text = (market.title + " " + market.subtitle).lower()
 
+        if "up in next" in text or "price up" in text:
+            return "fifteen_min"
         if "up or down" in text or "updown" in text:
             return "up_down"
         if "between" in text or "range" in text:
@@ -206,9 +211,9 @@ class MarketScanner:
         """
         asset = asset.upper()
         series_map: dict[str, list[str]] = {
-            "BTC": ["KXBTC", "KXBTCUD"],
-            "ETH": ["KXETH"],
-            "SOL": ["KXSOL"],
+            "BTC": ["KXBTCD", "KXBTC15M"],
+            "ETH": ["KXETHD", "KXETH15M"],
+            "SOL": ["KXSOLD", "KXSOL15M"],
         }
 
         series_tickers = series_map.get(asset, [])
@@ -260,6 +265,73 @@ class MarketScanner:
 
         log.info("Found %d active events for %s", len(events), asset)
         return events
+
+    async def scan_15m_markets(self) -> list[Market]:
+        """
+        Scan for currently open 15-minute up/down crypto markets.
+
+        Returns one market per asset (BTC, ETH, SOL) if available.
+        """
+        markets: list[Market] = []
+        for series in config.CRYPTO_15M_SERIES_TICKERS:
+            try:
+                ms = await self._client.get_all_markets(
+                    series_ticker=series,
+                    status="open",
+                )
+                markets.extend(ms)
+            except Exception:
+                log.debug("Failed to scan 15-min markets for %s", series)
+
+        log.info("Found %d open 15-min markets", len(markets))
+        return markets
+
+    @staticmethod
+    def get_asset_from_15m_ticker(ticker: str) -> str | None:
+        """
+        Extract the asset symbol from a 15-min market ticker.
+
+        Examples:
+            KXBTC15M-26FEB150645-45 → BTC
+            KXETH15M-26FEB150645-45 → ETH
+            KXSOL15M-26FEB150645-45 → SOL
+        """
+        for series, asset in config.SERIES_TO_ASSET.items():
+            if ticker.startswith(series):
+                return asset
+        return None
+
+    @staticmethod
+    def get_floor_strike_from_market(market: Market) -> float | None:
+        """
+        Extract the floor strike price from a 15-min market.
+
+        The floor_strike is stored in the market's yes_sub_title as
+        "Price to beat: $70,356.23" or as the floor_strike field.
+
+        Returns:
+            The floor strike price, or None.
+        """
+        # Try floor_strike attribute first (if available from API)
+        if hasattr(market, "floor_strike") and market.floor_strike:
+            try:
+                return float(market.floor_strike)
+            except (ValueError, TypeError):
+                pass
+
+        # Parse from yes_sub_title: "Price to beat: $70,356.23"
+        subtitle = getattr(market, "yes_sub_title", "") or ""
+        if not subtitle:
+            subtitle = market.subtitle or ""
+
+        price_match = TITLE_PRICE_RE.search(subtitle)
+        if price_match:
+            try:
+                return float(price_match.group(1).replace(",", ""))
+            except ValueError:
+                pass
+
+        return None
 
     # ------------------------------------------------------------------
     # Internal helpers

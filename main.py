@@ -34,6 +34,7 @@ from paper_trading.paper_engine import PaperEngine
 from paper_trading.results_tracker import ResultsTracker
 from risk.risk_manager import RiskManager
 from strategies.cross_strike_arb import CrossStrikeArbStrategy
+from strategies.fifteen_min_momentum import FifteenMinMomentumStrategy
 from strategies.market_maker import MarketMakerStrategy
 from strategies.momentum_scalp import MomentumScalpStrategy
 from utils.logger import get_logger
@@ -70,6 +71,7 @@ class TradingBot:
         self.momentum_scalp: MomentumScalpStrategy | None = None
         self.market_maker: MarketMakerStrategy | None = None
         self.cross_strike_arb: CrossStrikeArbStrategy | None = None
+        self.fifteen_min: FifteenMinMomentumStrategy | None = None
 
         # Watched market tickers (for orderbook polling)
         self._watched_tickers: list[str] = []
@@ -164,6 +166,7 @@ class TradingBot:
         self.momentum_scalp = MomentumScalpStrategy(**strategy_args)
         self.market_maker = MarketMakerStrategy(**strategy_args)
         self.cross_strike_arb = CrossStrikeArbStrategy(**strategy_args)
+        self.fifteen_min = FifteenMinMomentumStrategy(**strategy_args)
 
         log.info("All components initialized — ready to trade")
 
@@ -183,6 +186,7 @@ class TradingBot:
         last_mm_run = 0.0
         last_arb_run = 0.0
         last_scalp_run = 0.0
+        last_15m_run = 0.0
         last_market_scan = 0.0
         last_trade_export = 0.0
 
@@ -212,6 +216,11 @@ class TradingBot:
                 if now - last_arb_run >= config.ARB_SCAN_INTERVAL_SEC:
                     await self._run_safe(self.cross_strike_arb.run_once, "cross_strike_arb")
                     last_arb_run = now
+
+                # Every 5 seconds: 15-minute momentum
+                if now - last_15m_run >= config.FIFTEEN_MIN_INTERVAL_SEC:
+                    await self._run_safe(self.fifteen_min.run_once, "fifteen_min_momentum")
+                    last_15m_run = now
 
                 # Every 10 seconds: momentum scalp
                 if now - last_scalp_run >= 10:
@@ -274,7 +283,14 @@ class TradingBot:
         try:
             markets = await self.market_scanner.scan_crypto_markets()
             self._watched_tickers = [m.ticker for m in markets[:50]]
-            log.info("Watching %d markets", len(self._watched_tickers))
+
+            # Ensure 15-min markets are always included in the watch list
+            fifteen_min_markets = await self.market_scanner.scan_15m_markets()
+            for m in fifteen_min_markets:
+                if m.ticker not in self._watched_tickers:
+                    self._watched_tickers.append(m.ticker)
+
+            log.info("Watching %d markets (incl %d 15-min)", len(self._watched_tickers), len(fifteen_min_markets))
 
             # Subscribe to WebSocket ticker updates
             if self.ws_client and self.ws_client.is_connected and self._watched_tickers:

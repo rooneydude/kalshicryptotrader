@@ -12,10 +12,12 @@ CRITICAL CONSTANTS (from Kalshi fee schedule, effective Feb 5, 2026):
 - No settlement fees, no membership fees
 
 CRYPTO MARKET TICKERS:
-- BTC series: starts with "KXBTC" (e.g., KXBTC-26FEB14-T70000 for "BTC above $70,000")
-- ETH series: starts with "KXETH"
-- SOL series: starts with "KXSOL"
-- BTC up/down 15-min: starts with "KXBTCUD"
+- BTC daily: starts with "KXBTCD" (e.g., KXBTCD-26FEB1507-T78749.99)
+- ETH daily: starts with "KXETHD"
+- SOL daily: starts with "KXSOLD"
+- BTC 15-min up/down: "KXBTC15M" (e.g., KXBTC15M-26FEB150645-45)
+- ETH 15-min up/down: "KXETH15M"
+- SOL 15-min up/down: "KXSOL15M"
 """
 
 import os
@@ -62,8 +64,17 @@ LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 LOG_FILE: str = os.getenv("LOG_FILE", "./logs/bot.log")
 
 # --- Crypto Series Tickers ---
-CRYPTO_SERIES_TICKERS: list[str] = ["KXBTC", "KXETH", "KXSOL", "KXBTCUD"]
+CRYPTO_SERIES_TICKERS: list[str] = ["KXBTCD", "KXETHD", "KXSOLD"]
+CRYPTO_15M_SERIES_TICKERS: list[str] = ["KXBTC15M", "KXETH15M", "KXSOL15M"]
+ALL_CRYPTO_SERIES: list[str] = CRYPTO_SERIES_TICKERS + CRYPTO_15M_SERIES_TICKERS
 SUPPORTED_ASSETS: list[str] = ["BTC", "ETH", "SOL"]
+
+# Map 15-min series ticker → asset symbol
+SERIES_TO_ASSET: dict[str, str] = {
+    "KXBTC15M": "BTC",
+    "KXETH15M": "ETH",
+    "KXSOL15M": "SOL",
+}
 
 # --- Fee Coefficients ---
 TAKER_FEE_COEFF: float = 0.07
@@ -102,6 +113,19 @@ ARB_MIN_PROFIT_CENTS: int = 2            # Minimum 2c profit per contract after 
 ARB_MAX_CONTRACTS: int = 100             # Max contracts per arb leg
 ARB_SCAN_INTERVAL_SEC: int = 5           # Scan for arbs every 5 seconds
 
+# --- Strategy 4: 15-Minute Momentum ---
+# Trades the rolling 15-min "price up?" binary markets using short-term momentum
+FIFTEEN_MIN_ENABLED: bool = True
+FIFTEEN_MIN_INTERVAL_SEC: int = 5          # Scan every 5 seconds
+FIFTEEN_MIN_MOMENTUM_WINDOW_SEC: int = 120 # Lookback window for momentum (2 min)
+FIFTEEN_MIN_MIN_MOMENTUM_PCT: float = 0.08 # Min 0.08% move to trigger a signal
+FIFTEEN_MIN_MIN_EDGE_CENTS: int = 2        # Min 2c edge after fees
+FIFTEEN_MIN_MAX_CONTRACTS: int = 20        # Max contracts per trade
+FIFTEEN_MIN_MIN_TIME_LEFT_SEC: int = 120   # Don't trade if < 2 min remaining
+FIFTEEN_MIN_MAX_ENTRY_AGE_SEC: int = 600   # Don't trade if market opened > 10 min ago
+FIFTEEN_MIN_CONFIDENCE_BOOST: float = 0.10 # Boost fair value toward momentum direction
+FIFTEEN_MIN_USE_MAKER: bool = True         # Prefer maker orders
+
 # --- Polling & Rate Limits ---
 ORDERBOOK_POLL_INTERVAL_SEC: int = 1     # Poll orderbooks every 1 second (parallel)
 MARKET_SCAN_INTERVAL_SEC: int = 60       # Scan for new markets every 60 seconds
@@ -134,3 +158,4 @@ if TRADING_MODE == "small_live":
     MM_MAX_NET_POSITION = 25           # Max 25 net (was 500)
     MM_HEDGE_TRIGGER = 15              # Hedge at 15 (was 200)
     ARB_MAX_CONTRACTS = 10             # Max 10 per arb leg (was 100)
+    FIFTEEN_MIN_MAX_CONTRACTS = 5      # Max 5 per 15-min trade (was 20)

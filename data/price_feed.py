@@ -146,6 +146,77 @@ class PriceFeed:
 
         return total_pv / total_v
 
+    def get_momentum(self, asset: str, window_seconds: int = 120) -> float:
+        """
+        Calculate short-term price momentum as percentage change.
+
+        Compares latest price to the VWAP from `window_seconds` ago.
+        Positive = price trending up, negative = trending down.
+
+        Args:
+            asset: Asset symbol (BTC, ETH, SOL).
+            window_seconds: Lookback window in seconds (default 120 = 2 min).
+
+        Returns:
+            Percentage change as a decimal (e.g. 0.001 = +0.1%).
+            Returns 0.0 if insufficient data.
+        """
+        asset = asset.upper()
+        state = self._assets.get(asset)
+        if state is None:
+            raise ValueError(f"Unsupported asset: {asset}")
+
+        if state.latest_price <= 0:
+            return 0.0
+
+        # Find the price from `window_seconds` ago using snapshots
+        now = time.time()
+        target_time = now - window_seconds
+
+        # Find closest snapshot to target_time
+        best_snap_price = 0.0
+        best_snap_diff = float("inf")
+        for snap_time, snap_price in state.price_snapshots:
+            diff = abs(snap_time - target_time)
+            if diff < best_snap_diff:
+                best_snap_diff = diff
+                best_snap_price = snap_price
+
+        if best_snap_price <= 0 or best_snap_diff > window_seconds:
+            return 0.0
+
+        return (state.latest_price - best_snap_price) / best_snap_price
+
+    def get_price_at(self, asset: str, seconds_ago: int) -> float:
+        """
+        Get the price of an asset from approximately `seconds_ago`.
+
+        Uses price snapshots (taken every 10s).
+
+        Args:
+            asset: Asset symbol.
+            seconds_ago: How far back in seconds.
+
+        Returns:
+            Approximate price, or 0.0 if unavailable.
+        """
+        asset = asset.upper()
+        state = self._assets.get(asset)
+        if state is None:
+            raise ValueError(f"Unsupported asset: {asset}")
+
+        target_time = time.time() - seconds_ago
+        best_price = 0.0
+        best_diff = float("inf")
+
+        for snap_time, snap_price in state.price_snapshots:
+            diff = abs(snap_time - target_time)
+            if diff < best_diff:
+                best_diff = diff
+                best_price = snap_price
+
+        return best_price if best_diff < seconds_ago else 0.0
+
     def get_volatility(self, asset: str, window_minutes: int = 30) -> float:
         """
         Calculate annualized realized volatility from price snapshots.
