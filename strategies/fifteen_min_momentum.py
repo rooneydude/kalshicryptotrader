@@ -175,7 +175,15 @@ class FifteenMinMomentumStrategy(BaseStrategy):
             time_left_sec,
         )
 
-        # 9. Get orderbook prices
+        # 9. Get orderbook prices — if not in local cache, fetch directly
+        if not self.orderbook.has_book(market.ticker):
+            try:
+                ob = await self.client.get_orderbook(market.ticker)
+                self.orderbook.update_from_rest(market.ticker, ob)
+                log.info("[%s] Fetched fresh orderbook for %s", self.name, market.ticker)
+            except Exception:
+                log.debug("[%s] Failed to fetch orderbook for %s", self.name, market.ticker)
+
         best_yes_ask = self.orderbook.get_best_yes_ask(market.ticker)
         best_yes_bid = self.orderbook.get_best_yes_bid(market.ticker)
         best_no_ask = self._get_best_no_ask(market.ticker)

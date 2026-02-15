@@ -129,7 +129,7 @@ class Order(BaseModel):
     yes_price: int = 0  # Price in cents
     no_price: int = 0   # Price in cents
     created_time: str = ""
-    expiration_time: str = ""
+    expiration_time: str | None = None  # Can be null from API
     remaining_count: int = 0
     queue_position: int = 0
     count: int = 0  # Original order size
