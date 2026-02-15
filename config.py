@@ -154,8 +154,8 @@ if TRADING_MODE == "small_live":
     WEEKLY_LOSS_LIMIT_PCT = 0.04       # Stop after 4% weekly loss (was 10%)
 
     SCALP_MIN_BOOK_DEPTH = 10          # Relax depth (was 20)
-    MM_QUOTE_SIZE = 5                  # 5 contracts per quote (was 50)
-    MM_MAX_NET_POSITION = 25           # Max 25 net (was 500)
-    MM_HEDGE_TRIGGER = 15              # Hedge at 15 (was 200)
-    ARB_MAX_CONTRACTS = 10             # Max 10 per arb leg (was 100)
-    FIFTEEN_MIN_MAX_CONTRACTS = 5      # Max 5 per 15-min trade (was 20)
+    MM_QUOTE_SIZE = 1                  # 1 contract per quote (was 50) — $50 acct
+    MM_MAX_NET_POSITION = 10           # Max 10 net (was 500)
+    MM_HEDGE_TRIGGER = 5              # Hedge at 5 (was 200)
+    ARB_MAX_CONTRACTS = 2              # Max 2 per arb leg (was 100)
+    FIFTEEN_MIN_MAX_CONTRACTS = 2      # Max 2 per 15-min trade (was 20)

@@ -194,7 +194,9 @@ class FifteenMinMomentumStrategy(BaseStrategy):
         # Try buying YES if our fair value is higher than the ask
         if best_yes_ask:
             ask_price, ask_qty = best_yes_ask
-            if fair_value_yes > ask_price:
+            if ask_price <= 0.01:
+                log.debug("[%s] %s: yes_ask too low (%.2f), skip", self.name, market.ticker, ask_price)
+            elif fair_value_yes > ask_price:
                 edge = fair_value_yes - ask_price
                 signal = self._build_signal(
                     market, asset, "yes", "buy", ask_price, ask_qty,
@@ -206,7 +208,9 @@ class FifteenMinMomentumStrategy(BaseStrategy):
         fair_value_no = 1.0 - fair_value_yes
         if best_no_ask and (signal is None or fair_value_no - best_no_ask[0] > (signal.edge_cents / 100 if signal else 0)):
             no_ask_price, no_ask_qty = best_no_ask
-            if fair_value_no > no_ask_price:
+            if no_ask_price <= 0.01:
+                pass  # Skip near-zero asks
+            elif fair_value_no > no_ask_price:
                 edge = fair_value_no - no_ask_price
                 no_signal = self._build_signal(
                     market, asset, "no", "buy", no_ask_price, no_ask_qty,
@@ -284,11 +288,17 @@ class FifteenMinMomentumStrategy(BaseStrategy):
         if now - last_trade < 30:
             return None
 
-        # Determine entry price
-        # For maker orders, try to get a slightly better price
-        if config.FIFTEEN_MIN_USE_MAKER:
+        # Determine entry price and maker/taker mode
+        use_maker = config.FIFTEEN_MIN_USE_MAKER
+        if use_maker:
             # Place 1c below the ask to try to get maker fill
             entry_cents = max(1, int(ask_price * 100) - 1)
+            # Check if our bid would cross the ask — if so, use taker instead
+            ask_cents = int(ask_price * 100)
+            if entry_cents >= ask_cents:
+                # Would cross — switch to taker at the ask price
+                use_maker = False
+                entry_cents = ask_cents
         else:
             entry_cents = int(ask_price * 100)
 
@@ -309,7 +319,7 @@ class FifteenMinMomentumStrategy(BaseStrategy):
             contracts=max_contracts,
             edge_cents=net_edge_cents,
             confidence=min(fair_value, 0.99),
-            post_only=config.FIFTEEN_MIN_USE_MAKER,
+            post_only=use_maker,
             reason=(
                 f"15m {asset} {direction}: spot=${spot:.2f} vs strike=${floor_strike:.2f}, "
                 f"fair={fair_value:.3f}, momentum={momentum*100:+.3f}%, "
