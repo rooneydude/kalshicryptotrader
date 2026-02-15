@@ -171,7 +171,8 @@ class AmendOrderRequest(BaseModel):
 class Balance(BaseModel):
     """GET /portfolio/balance response."""
     balance: int = 0  # Balance in cents
-    available_balance: int = 0  # Available to trade, in cents
+    available_balance: int | None = None  # Available to trade, in cents
+    portfolio_value: int = 0  # Portfolio value in cents
 
     @property
     def balance_dollars(self) -> float:
@@ -179,7 +180,10 @@ class Balance(BaseModel):
 
     @property
     def available_balance_dollars(self) -> float:
-        return self.available_balance / 100.0
+        # If available_balance not returned, assume full balance is available
+        if self.available_balance is not None:
+            return self.available_balance / 100.0
+        return self.balance_dollars
 
     model_config = ConfigDict(extra="allow")
 
