@@ -13,6 +13,7 @@ from typing import Any
 from kalshi.client import KalshiClient
 from kalshi.models import CreateOrderRequest, Order
 from utils.logger import get_logger
+from utils import discord
 
 log = get_logger("execution.order_manager")
 
@@ -94,9 +95,17 @@ class OrderManager:
         )
 
         if self._paper_mode:
-            return await self._paper_place(request)
+            order = await self._paper_place(request)
         else:
-            return await self._live_place(request)
+            order = await self._live_place(request)
+
+        if order is not None:
+            await discord.notify_order(
+                ticker=ticker, side=side, action=action,
+                price_cents=price_cents, contracts=contracts,
+                order_id=order.order_id,
+            )
+        return order
 
     async def place_order_from_signal(self, signal: Any) -> Order | None:
         """

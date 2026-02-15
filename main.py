@@ -37,6 +37,7 @@ from strategies.cross_strike_arb import CrossStrikeArbStrategy
 from strategies.market_maker import MarketMakerStrategy
 from strategies.momentum_scalp import MomentumScalpStrategy
 from utils.logger import get_logger
+from utils import discord
 
 log = get_logger("main")
 
@@ -165,6 +166,9 @@ class TradingBot:
         self.cross_strike_arb = CrossStrikeArbStrategy(**strategy_args)
 
         log.info("All components initialized — ready to trade")
+
+        mode = "PAPER" if config.PAPER_TRADING else f"LIVE ({config.TRADING_MODE})"
+        await discord.notify_startup(mode, initial_balance, self._session_id)
 
     # ------------------------------------------------------------------
     # Main event loop
@@ -323,19 +327,27 @@ class TradingBot:
         """Run risk manager checks."""
         if self.risk_manager.check_kill_switch():
             log.critical("KILL SWITCH ACTIVE — trading paused")
+            asyncio.create_task(discord.notify_risk("KILL SWITCH ACTIVE — trading paused"))
 
         if self.risk_manager.should_flatten_all():
             log.critical("FLATTEN ALL triggered — cancelling all orders")
+            asyncio.create_task(discord.notify_risk("FLATTEN ALL triggered — cancelling all orders"))
             asyncio.create_task(self._emergency_flatten())
 
     def _export_trades(self) -> None:
-        """Export trade log to CSV."""
+        """Export trade log to CSV and send Discord portfolio update."""
         try:
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             filepath = f"./logs/trades_{self._session_id}_{timestamp}.csv"
             self.position_tracker.export_trades_csv(filepath)
         except Exception:
             log.debug("Trade export failed")
+
+        # Send Discord portfolio update every 5 minutes
+        if self.position_tracker is not None:
+            summary = self.position_tracker.get_portfolio_summary()
+            if summary.get("trades_today", 0) > 0 or summary.get("active_positions", 0) > 0:
+                asyncio.create_task(discord.notify_portfolio(summary))
 
     async def _emergency_flatten(self) -> None:
         """Cancel all orders in an emergency."""

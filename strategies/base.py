@@ -20,6 +20,7 @@ from execution.position_tracker import PositionTracker
 from kalshi.client import KalshiClient
 from risk.risk_manager import RiskManager
 from utils.logger import get_logger
+from utils import discord
 
 log = get_logger("strategies.base")
 
@@ -112,8 +113,8 @@ class BaseStrategy(ABC):
             for sig in signals:
                 log.info(
                     "  → %s %s %s @ $%.2f, edge=%.1fc, qty=%d",
-                    sig.side, sig.ticker, sig.strategy, sig.price,
-                    sig.edge * 100 if sig.edge else 0, sig.quantity,
+                    sig.side, sig.ticker, sig.strategy, sig.price_cents / 100,
+                    sig.edge_cents, sig.contracts,
                 )
 
             approved = self.risk_manager.filter_signals(signals)
@@ -123,6 +124,8 @@ class BaseStrategy(ABC):
                 return
 
             log.info("[%s] Executing %d approved signal(s)", self.name, len(approved))
+            for sig in approved:
+                await discord.notify_signal(sig)
             await self.execute(approved)
 
         except Exception:
