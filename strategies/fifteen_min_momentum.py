@@ -86,6 +86,8 @@ class FifteenMinMomentumStrategy(BaseStrategy):
                 signal = await self._evaluate_market(market)
                 if signal:
                     signals.append(signal)
+                else:
+                    log.debug("[%s] No signal for %s", self.name, market.ticker)
             except Exception:
                 log.exception("[%s] Error evaluating %s", self.name, market.ticker)
 

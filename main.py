@@ -282,15 +282,18 @@ class TradingBot:
         """Discover new crypto markets and update watch list."""
         try:
             markets = await self.market_scanner.scan_crypto_markets()
-            self._watched_tickers = [m.ticker for m in markets[:50]]
 
-            # Ensure 15-min markets are always included in the watch list
+            # Put 15-min markets FIRST so they're always in the orderbook poll window
             fifteen_min_markets = await self.market_scanner.scan_15m_markets()
-            for m in fifteen_min_markets:
-                if m.ticker not in self._watched_tickers:
+            fifteen_min_tickers = {m.ticker for m in fifteen_min_markets}
+            self._watched_tickers = [m.ticker for m in fifteen_min_markets]
+
+            # Add remaining markets (excluding 15-min already added)
+            for m in markets[:50]:
+                if m.ticker not in fifteen_min_tickers:
                     self._watched_tickers.append(m.ticker)
 
-            log.info("Watching %d markets (incl %d 15-min)", len(self._watched_tickers), len(fifteen_min_markets))
+            log.info("Watching %d markets (incl %d 15-min first)", len(self._watched_tickers), len(fifteen_min_markets))
 
             # Subscribe to WebSocket ticker updates
             if self.ws_client and self.ws_client.is_connected and self._watched_tickers:
