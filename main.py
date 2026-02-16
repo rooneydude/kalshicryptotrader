@@ -145,6 +145,9 @@ class TradingBot:
             position_tracker=self.position_tracker,
             initial_balance=initial_balance,
         )
+        # Wire order manager into risk manager so it can query resting orders
+        # and cancel exchange orders when the kill switch fires
+        self.risk_manager.set_order_manager(self.order_manager)
 
         # 10. Wire WebSocket callbacks
         if self.ws_client:
@@ -167,6 +170,15 @@ class TradingBot:
         self.market_maker = MarketMakerStrategy(**strategy_args)
         self.cross_strike_arb = CrossStrikeArbStrategy(**strategy_args)
         self.fifteen_min = FifteenMinMomentumStrategy(**strategy_args)
+
+        # 12. Cancel any resting exchange orders from previous sessions
+        if not config.PAPER_TRADING:
+            try:
+                stale = await self.order_manager.cancel_all_exchange_orders()
+                if stale > 0:
+                    log.warning("Startup cleanup: cancelled %d stale exchange orders", stale)
+            except Exception:
+                log.warning("Could not clean up stale orders on startup")
 
         log.info("All components initialized — ready to trade")
 
@@ -205,8 +217,8 @@ class TradingBot:
                     self._update_position_prices()
                     last_orderbook_poll = now
 
-                # Every 3 seconds: market maker
-                if now - last_mm_run >= config.MM_REQUOTE_INTERVAL_SEC:
+                # Every 3 seconds: market maker (only if enabled)
+                if config.MM_ENABLED and now - last_mm_run >= config.MM_REQUOTE_INTERVAL_SEC:
                     await self._run_safe(self.market_maker.run_once, "market_maker")
                     await self._run_safe(self.market_maker.manage_inventory, "mm_inventory")
                     await self._run_safe(self.market_maker.check_kill_switch, "mm_killswitch")
@@ -369,10 +381,10 @@ class TradingBot:
                 asyncio.create_task(discord.notify_portfolio(summary))
 
     async def _emergency_flatten(self) -> None:
-        """Cancel all orders in an emergency."""
+        """Cancel all exchange orders in an emergency."""
         try:
-            count = await self.order_manager.cancel_all_orders()
-            log.critical("Emergency flatten: cancelled %d orders", count)
+            count = await self.order_manager.cancel_all_exchange_orders()
+            log.critical("Emergency flatten: cancelled %d exchange orders", count)
         except Exception:
             log.exception("Emergency flatten failed")
 
@@ -428,11 +440,11 @@ class TradingBot:
         log.info("Shutting down...")
         self._running = False
 
-        # 1. Cancel all resting orders
+        # 1. Cancel all resting orders (from exchange, not just local state)
         if self.order_manager is not None:
             try:
-                count = await self.order_manager.cancel_all_orders()
-                log.info("Cancelled %d resting orders", count)
+                count = await self.order_manager.cancel_all_exchange_orders()
+                log.info("Cancelled %d resting exchange orders", count)
             except Exception:
                 log.exception("Failed to cancel orders during shutdown")
 

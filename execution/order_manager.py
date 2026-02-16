@@ -237,6 +237,64 @@ class OrderManager:
             log.exception("Failed to batch cancel orders")
             return 0
 
+    async def cancel_all_exchange_orders(self, ticker: str | None = None) -> int:
+        """
+        Fetch resting orders directly from the exchange and cancel them.
+
+        Unlike cancel_all_orders() which relies on local state, this queries
+        the exchange API to find all resting orders—critical after restarts
+        or when local tracking is stale.
+
+        Returns:
+            Number of orders cancelled.
+        """
+        if self._paper_mode:
+            return await self.cancel_all_orders(ticker=ticker)
+
+        try:
+            resp = await self._client.get_orders(
+                ticker=ticker,
+                status="resting",
+            )
+            order_ids = [o.order_id for o in resp.orders if o.order_id]
+            if not order_ids:
+                log.debug("No resting exchange orders to cancel (ticker=%s)", ticker)
+                return 0
+
+            await self._client.batch_cancel_orders(order_ids)
+            for oid in order_ids:
+                if oid in self._orders:
+                    self._orders[oid].status = "canceled"
+            log.info(
+                "Cancelled %d exchange orders (ticker=%s)",
+                len(order_ids), ticker,
+            )
+            return len(order_ids)
+        except Exception:
+            log.exception("Failed to cancel exchange orders (ticker=%s)", ticker)
+            return 0
+
+    async def get_resting_order_count(self, ticker: str) -> int:
+        """
+        Get the total number of resting orders for a ticker from the exchange.
+
+        Returns:
+            Count of resting contracts (sum of remaining_count).
+        """
+        if self._paper_mode:
+            return sum(
+                o.remaining_count
+                for o in self._orders.values()
+                if o.status == "resting" and o.ticker == ticker
+            )
+
+        try:
+            resp = await self._client.get_orders(ticker=ticker, status="resting")
+            return sum(o.remaining_count for o in resp.orders)
+        except Exception:
+            log.debug("Failed to fetch resting order count for %s", ticker)
+            return 0
+
     # ------------------------------------------------------------------
     # Order amendment
     # ------------------------------------------------------------------

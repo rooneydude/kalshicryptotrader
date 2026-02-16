@@ -35,6 +35,9 @@ class RiskManager:
         self._manual_override = False
         self._exchange_open = True
 
+        # Order manager reference — set after construction via set_order_manager()
+        self._order_manager: Any = None
+
     @property
     def initial_balance(self) -> float:
         return self._initial_balance
@@ -42,6 +45,10 @@ class RiskManager:
     @initial_balance.setter
     def initial_balance(self, value: float) -> None:
         self._initial_balance = value
+
+    def set_order_manager(self, order_manager: Any) -> None:
+        """Set the order manager for resting-order queries."""
+        self._order_manager = order_manager
 
     # ------------------------------------------------------------------
     # Signal filtering
@@ -127,14 +134,21 @@ class RiskManager:
                 f"({config.MAX_SINGLE_TRADE_PCT * capital:.2f})"
             )
 
-        # 2. Per-strike exposure
-        current_strike_exposure = abs(
-            self._tracker.get_net_position(signal.ticker)
-        ) * (signal.price_cents / 100.0)
+        # 2. Per-strike exposure (includes filled positions + resting orders)
+        filled_contracts = abs(self._tracker.get_net_position(signal.ticker))
+        resting_contracts = 0
+        if self._order_manager is not None:
+            resting_contracts = sum(
+                o.remaining_count
+                for o in self._order_manager.get_open_orders(ticker=signal.ticker)
+            )
+        total_contracts = filled_contracts + resting_contracts
+        current_strike_exposure = total_contracts * (signal.price_cents / 100.0)
         new_strike_exposure = current_strike_exposure + trade_cost
         if new_strike_exposure > config.MAX_PER_STRIKE_PCT * capital:
             return (
-                f"Per-strike exposure {new_strike_exposure:.2f} exceeds "
+                f"Per-strike exposure {new_strike_exposure:.2f} (filled={filled_contracts}, "
+                f"resting={resting_contracts}) exceeds "
                 f"{config.MAX_PER_STRIKE_PCT * 100:.0f}% limit"
             )
 
@@ -194,6 +208,8 @@ class RiskManager:
         - Daily loss exceeds limit
         - Exchange not open
         - Manual override activated
+
+        When the kill switch first activates, all exchange orders are cancelled.
         """
         if self._kill_switch_active:
             return True
@@ -203,7 +219,7 @@ class RiskManager:
 
         if not self._exchange_open:
             log.warning("Kill switch: exchange not open")
-            self._kill_switch_active = True
+            self._activate_kill_switch("exchange not open")
             return True
 
         capital = self._initial_balance
@@ -212,10 +228,33 @@ class RiskManager:
                 "Kill switch: daily loss $%.2f exceeds limit",
                 abs(self._tracker.daily_pnl),
             )
-            self._kill_switch_active = True
+            self._activate_kill_switch(
+                f"daily loss ${abs(self._tracker.daily_pnl):.2f}"
+            )
             return True
 
         return False
+
+    def _activate_kill_switch(self, reason: str) -> None:
+        """Activate the kill switch and cancel all exchange orders."""
+        self._kill_switch_active = True
+        log.critical("KILL SWITCH ACTIVATED: %s", reason)
+
+        # Cancel all exchange orders immediately
+        if self._order_manager is not None:
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(
+                        self._order_manager.cancel_all_exchange_orders()
+                    )
+                else:
+                    loop.run_until_complete(
+                        self._order_manager.cancel_all_exchange_orders()
+                    )
+            except Exception:
+                log.exception("Failed to cancel exchange orders on kill switch")
 
     def should_flatten_all(self) -> bool:
         """

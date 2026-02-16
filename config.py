@@ -100,6 +100,7 @@ SCALP_MAX_TIME_TO_SETTLE_HOURS: int = 8
 SCALP_PREFER_MAKER: bool = True          # Use post_only when possible
 
 # --- Strategy 2: Market Making ---
+MM_ENABLED: bool = True                  # Master switch for market maker strategy
 MM_SPREAD_CENTS: int = 4                 # Target 4c spread (2c each side of fair value)
 MM_MAX_NET_POSITION: int = 500           # Max 500 contracts net long or short
 MM_HEDGE_TRIGGER: int = 200              # Hedge when net > 200 contracts
@@ -145,17 +146,21 @@ LOG_DIR.mkdir(exist_ok=True)
 # while validating the bot works correctly with real money.
 # ---------------------------------------------------------------------------
 if TRADING_MODE == "small_live":
-    MAX_SINGLE_TRADE_PCT = 0.02        # 2% of capital per trade (was 10%)
-    MAX_PER_STRIKE_PCT = 0.04          # 4% per strike (was 15%)
-    MAX_PER_EVENT_PCT = 0.08           # 8% per event (was 30%)
-    MAX_TOTAL_EXPOSURE_PCT = 0.20      # 20% total (was 75%)
-    CASH_BUFFER_PCT = 0.80             # Keep 80% cash (was 25%)
-    DAILY_LOSS_LIMIT_PCT = 0.02        # Stop after 2% daily loss (was 5%)
-    WEEKLY_LOSS_LIMIT_PCT = 0.04       # Stop after 4% weekly loss (was 10%)
+    MAX_SINGLE_TRADE_PCT = 0.04        # 4% of capital per trade (was 10%) — ~$0.08 on $2
+    MAX_PER_STRIKE_PCT = 0.10          # 10% per strike (was 15%)
+    MAX_PER_EVENT_PCT = 0.20           # 20% per event (was 30%)
+    MAX_TOTAL_EXPOSURE_PCT = 0.50      # 50% total (was 75%)
+    CASH_BUFFER_PCT = 0.50             # Keep 50% cash (was 25%)
+    DAILY_LOSS_LIMIT_PCT = 0.10        # Stop after 10% daily loss (was 5%)
+    WEEKLY_LOSS_LIMIT_PCT = 0.20       # Stop after 20% weekly loss (was 10%)
 
     SCALP_MIN_BOOK_DEPTH = 10          # Relax depth (was 20)
-    MM_QUOTE_SIZE = 1                  # 1 contract per quote (was 50) — $50 acct
-    MM_MAX_NET_POSITION = 10           # Max 10 net (was 500)
-    MM_HEDGE_TRIGGER = 5              # Hedge at 5 (was 200)
+
+    # Market maker DISABLED for small accounts — it was the main loss driver
+    MM_ENABLED = False
+    MM_QUOTE_SIZE = 1                  # 1 contract per quote (was 50)
+    MM_MAX_NET_POSITION = 3            # Max 3 net (was 500) — hard cap
+    MM_HEDGE_TRIGGER = 2               # Hedge at 2 (was 200)
+
     ARB_MAX_CONTRACTS = 2              # Max 2 per arb leg (was 100)
-    FIFTEEN_MIN_MAX_CONTRACTS = 2      # Max 2 per 15-min trade (was 20)
+    FIFTEEN_MIN_MAX_CONTRACTS = 5      # Max 5 per 15-min trade (was 20)

@@ -266,15 +266,26 @@ class MarketMakerStrategy(BaseStrategy):
         """
         Execute market making signals.
 
-        1. Cancel all existing resting orders for our markets (fresh quotes)
-        2. Place new limit orders (post_only=True)
+        1. Cancel ALL resting orders on the exchange for our markets (fresh quotes)
+        2. Check hard position cap before placing
+        3. Place new limit orders (post_only=True)
         """
-        # Cancel existing quotes
+        # Cancel ALL exchange orders for our markets (not just local tracking)
         for ticker in self._selected_tickers:
-            await self.order_manager.cancel_all_orders(ticker=ticker)
+            await self.order_manager.cancel_all_exchange_orders(ticker=ticker)
 
-        # Place new quotes
+        # Place new quotes (with hard position cap check)
         for signal in signals:
+            # Hard cap: skip if we already have too many contracts on this market
+            net_pos = self.position_tracker.get_net_position(signal.ticker)
+            if abs(net_pos) + signal.contracts > config.MM_MAX_NET_POSITION:
+                log.warning(
+                    "[%s] SKIP quote %s: net_pos=%d + %d would exceed cap %d",
+                    self.name, signal.ticker, net_pos,
+                    signal.contracts, config.MM_MAX_NET_POSITION,
+                )
+                continue
+
             log.info(
                 "[%s] Quoting: %s %s %s x%d @ %dc | %s",
                 self.name,
@@ -311,14 +322,14 @@ class MarketMakerStrategy(BaseStrategy):
             net_pos = self.position_tracker.get_net_position(ticker)
 
             if abs(net_pos) > config.MM_MAX_NET_POSITION:
-                # Emergency: cancel all quotes and flatten
+                # Emergency: cancel all exchange quotes and flatten
                 log.warning(
                     "[%s] MAX NET POSITION exceeded for %s: %d — flattening",
                     self.name,
                     ticker,
                     net_pos,
                 )
-                await self.order_manager.cancel_all_orders(ticker=ticker)
+                await self.order_manager.cancel_all_exchange_orders(ticker=ticker)
 
                 # Place aggressive flatten order
                 if net_pos > 0:
@@ -399,7 +410,7 @@ class MarketMakerStrategy(BaseStrategy):
             )
 
             for ticker in self._selected_tickers:
-                await self.order_manager.cancel_all_orders(ticker=ticker)
+                await self.order_manager.cancel_all_exchange_orders(ticker=ticker)
 
             # Cooldown: don't requote for 5 minutes
             self._kill_switch_until = now + 300
