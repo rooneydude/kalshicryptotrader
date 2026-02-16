@@ -39,7 +39,8 @@ BINANCE_WS_URL: str = os.getenv("BINANCE_WS_URL", "wss://stream.binance.com:9443
 
 # --- Trading Mode ---
 # TRADING_MODE controls the overall posture of the bot:
-#   "demo"       → Use demo API + paper trading (default, zero risk)
+#   "demo"        → Use demo API + paper trading (default, zero risk)
+#   "paper_live"  → Use production API for real market data, but simulate trades
 #   "small_live"  → Use production API + real orders, but tiny position sizes
 #   "full_live"   → Use production API + full position sizes from spec
 TRADING_MODE: str = os.getenv("TRADING_MODE", "demo")
@@ -50,6 +51,10 @@ if TRADING_MODE == "demo":
     PAPER_TRADING = True
     KALSHI_BASE_URL = os.getenv("KALSHI_BASE_URL", "https://demo-api.kalshi.co")
     KALSHI_WS_URL = os.getenv("KALSHI_WS_URL", "wss://demo-api.kalshi.co/trade-api/ws/v2")
+elif TRADING_MODE == "paper_live":
+    PAPER_TRADING = True
+    KALSHI_BASE_URL = os.getenv("KALSHI_BASE_URL", "https://api.elections.kalshi.com")
+    KALSHI_WS_URL = os.getenv("KALSHI_WS_URL", "wss://api.elections.kalshi.com/trade-api/ws/v2")
 elif TRADING_MODE == "small_live":
     PAPER_TRADING = False
     KALSHI_BASE_URL = os.getenv("KALSHI_BASE_URL", "https://api.elections.kalshi.com")
@@ -58,6 +63,9 @@ elif TRADING_MODE == "full_live":
     PAPER_TRADING = False
     KALSHI_BASE_URL = os.getenv("KALSHI_BASE_URL", "https://api.elections.kalshi.com")
     KALSHI_WS_URL = os.getenv("KALSHI_WS_URL", "wss://api.elections.kalshi.com/trade-api/ws/v2")
+
+# --- Dashboard ---
+DASHBOARD_PORT: int = int(os.getenv("PORT", "8080"))
 
 # --- Logging ---
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")

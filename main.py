@@ -517,6 +517,9 @@ class TradingBot:
 
 async def main() -> None:
     """Entry point: set up, run, and handle shutdown."""
+    import uvicorn
+    from dashboard.app import app as dashboard_app, set_bot
+
     bot = TradingBot()
 
     # Register signal handlers for graceful shutdown
@@ -533,12 +536,26 @@ async def main() -> None:
     try:
         await bot.setup()
 
+        # Wire bot into dashboard so it can read state
+        set_bot(bot)
+
+        # Start dashboard web server
+        dashboard_config = uvicorn.Config(
+            dashboard_app,
+            host="0.0.0.0",
+            port=config.DASHBOARD_PORT,
+            log_level="warning",
+        )
+        dashboard_server = uvicorn.Server(dashboard_config)
+        dashboard_task = asyncio.create_task(dashboard_server.serve())
+        log.info("Dashboard running on port %d", config.DASHBOARD_PORT)
+
         # Run bot until shutdown signal
         bot_task = asyncio.create_task(bot.run())
         shutdown_task = asyncio.create_task(shutdown_event.wait())
 
         done, pending = await asyncio.wait(
-            [bot_task, shutdown_task],
+            [bot_task, shutdown_task, dashboard_task],
             return_when=asyncio.FIRST_COMPLETED,
         )
 

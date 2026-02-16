@@ -16,5 +16,8 @@ RUN mkdir -p logs paper_results
 RUN useradd -m botuser && chown -R botuser:botuser /app
 USER botuser
 
+# Dashboard port (Railway sets PORT env var automatically)
+EXPOSE 8080
+
 # Entry point
 CMD ["python", "-u", "main.py"]
