@@ -123,6 +123,15 @@ async def api_trades() -> list[dict]:
     return trades
 
 
+@app.get("/api/resting")
+async def api_resting() -> dict:
+    """Resting paper orders and fill rate stats."""
+    if _bot is None or _bot.paper_engine is None:
+        return {"resting_count": 0, "resting_orders": [], "fill_rate_pct": 0}
+
+    return _bot.paper_engine.get_resting_summary()
+
+
 @app.get("/api/strategies")
 async def api_strategies() -> dict:
     """Per-strategy breakdown."""
@@ -382,6 +391,43 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   width: 100% !important;
   height: 100% !important;
 }
+.resting-stats-bar {
+  display: flex;
+  gap: 20px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.resting-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.resting-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+}
+.resting-stat-label {
+  font-size: 10px;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.queue-bar {
+  display: inline-block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface2);
+  width: 60px;
+  position: relative;
+  vertical-align: middle;
+}
+.queue-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--blue);
+}
 @media (max-width: 768px) {
   body { padding: 12px; }
   .cards { grid-template-columns: repeat(2, 1fr); }
@@ -450,6 +496,12 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 <div class="section">
   <div class="section-header">Recent Trades<span class="count" id="trades-total">0</span></div>
   <div id="trades-table"></div>
+</div>
+
+<div class="section" id="resting-section">
+  <div class="section-header">Resting Paper Orders<span class="count" id="resting-count">0</span></div>
+  <div id="resting-stats" class="resting-stats-bar"></div>
+  <div id="resting-table"></div>
 </div>
 
 <div class="section">
@@ -551,11 +603,12 @@ function drawChart() {
 
 async function refresh() {
   try {
-    const [status, positions, trades, strategies] = await Promise.all([
+    const [status, positions, trades, strategies, resting] = await Promise.all([
       fetch('/api/status').then(r => r.json()),
       fetch('/api/positions').then(r => r.json()),
       fetch('/api/trades').then(r => r.json()),
       fetch('/api/strategies').then(r => r.json()),
+      fetch('/api/resting').then(r => r.json()),
     ]);
 
     // Status
@@ -664,6 +717,50 @@ async function refresh() {
       html += '</tbody></table>';
       $('trades-table').innerHTML = html;
     }
+
+    // Resting orders
+    $('resting-count').textContent = resting.resting_count || 0;
+    const fillRate = resting.fill_rate_pct || 0;
+    const placed = resting.maker_orders_placed || 0;
+    const filled = resting.maker_orders_filled || 0;
+    const expired = resting.maker_orders_expired || 0;
+    const cancelled = resting.maker_orders_cancelled || 0;
+
+    $('resting-stats').innerHTML = `
+      <div class="resting-stat"><span class="resting-stat-value">${fillRate}%</span><span class="resting-stat-label">Fill Rate</span></div>
+      <div class="resting-stat"><span class="resting-stat-value">${placed}</span><span class="resting-stat-label">Placed</span></div>
+      <div class="resting-stat"><span class="resting-stat-value positive">${filled}</span><span class="resting-stat-label">Filled</span></div>
+      <div class="resting-stat"><span class="resting-stat-value neutral">${expired}</span><span class="resting-stat-label">Expired</span></div>
+      <div class="resting-stat"><span class="resting-stat-value neutral">${cancelled}</span><span class="resting-stat-label">Cancelled</span></div>
+      <div class="resting-stat"><span class="resting-stat-value" style="color:var(--amber)">${resting.resting_count || 0}</span><span class="resting-stat-label">Queued Now</span></div>
+    `;
+
+    const restingOrders = resting.resting_orders || [];
+    if (restingOrders.length === 0) {
+      $('resting-table').innerHTML = '<div class="empty-state">No resting paper orders</div>';
+    } else {
+      let html = '<table><thead><tr><th>Market</th><th>Side</th><th>Action</th><th>Price</th><th>Qty</th><th>Filled</th><th>Queue Ahead</th><th>Age</th></tr></thead><tbody>';
+      for (const r of restingOrders) {
+        const sideClass = r.side === 'yes' ? 'side-yes' : 'side-no';
+        const pct = r.total > 0 ? (r.filled / r.total * 100) : 0;
+        const queuePct = (r.queue_ahead + r.remaining) > 0 ? Math.min(100, r.queue_ahead / (r.queue_ahead + r.remaining) * 100) : 0;
+        html += `<tr>
+          <td class="ticker">${r.ticker}</td>
+          <td class="${sideClass}">${r.side.toUpperCase()}</td>
+          <td>${r.action}</td>
+          <td>${fmtPrice(r.price)}</td>
+          <td>${r.filled}/${r.total}</td>
+          <td>${pct.toFixed(0)}%</td>
+          <td>${r.queue_ahead} <span class="queue-bar"><span class="queue-bar-fill" style="width:${100-queuePct}%"></span></span></td>
+          <td>${r.age_sec.toFixed(0)}s</td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+      $('resting-table').innerHTML = html;
+    }
+
+    // Hide resting section if not in paper mode
+    $('resting-section').style.display = status.paper ? '' : 'none';
 
     // Strategies
     const stratEntries = Object.entries(strategies);

@@ -145,9 +145,14 @@ class TradingBot:
         self.position_tracker = PositionTracker(self.client)
         self.position_tracker.initial_balance = initial_balance
 
-        # Wire paper fill callback now that position tracker exists
+        # Wire paper fill callbacks now that position tracker exists
         if config.PAPER_TRADING:
+            # Taker fills (immediate, at placement time)
             self.order_manager.set_on_paper_fill(
+                lambda fill: self.position_tracker.update_from_fill(fill)
+            )
+            # Maker fills (deferred, via trade stream → paper engine queue)
+            self.paper_engine.set_on_fill(
                 lambda fill: self.position_tracker.update_from_fill(fill)
             )
 
@@ -164,6 +169,8 @@ class TradingBot:
             self.ws_client.on_fill(self._handle_fill)
             self.ws_client.on_orderbook_delta(self._handle_orderbook_delta)
             self.ws_client.on_ticker(self._handle_ticker)
+            if config.PAPER_TRADING:
+                self.ws_client.on_trade(self._handle_trade)
 
         # 11. Initialize strategies
         strategy_args = dict(
@@ -211,6 +218,7 @@ class TradingBot:
         last_15m_run = 0.0
         last_market_scan = 0.0
         last_trade_export = 0.0
+        last_paper_expiry = 0.0
 
         # Initial market scan
         await self._scan_markets()
@@ -256,6 +264,11 @@ class TradingBot:
                     self._log_portfolio()
                     self._check_risk()
                     last_market_scan = now
+
+                # Every 10 seconds: expire stale paper resting orders
+                if config.PAPER_TRADING and self.paper_engine and now - last_paper_expiry >= 10:
+                    self.paper_engine.expire_stale_orders()
+                    last_paper_expiry = now
 
                 # Every 5 minutes: export trade log
                 if now - last_trade_export >= 300:
@@ -317,9 +330,13 @@ class TradingBot:
 
             log.info("Watching %d markets (incl %d 15-min first)", len(self._watched_tickers), len(fifteen_min_markets))
 
-            # Subscribe to WebSocket ticker updates
+            # Subscribe to WebSocket channels for watched markets
             if self.ws_client and self.ws_client.is_connected and self._watched_tickers:
                 await self.ws_client.subscribe_ticker(self._watched_tickers[:20])
+                # In paper mode, subscribe to the trade stream for realistic
+                # maker fill simulation via queue-based paper engine
+                if config.PAPER_TRADING:
+                    await self.ws_client.subscribe_trade(self._watched_tickers[:20])
 
         except Exception:
             log.exception("Market scan failed")
@@ -434,6 +451,34 @@ class TradingBot:
                 self.orderbook_manager.update_from_delta(ticker, msg)
         except Exception:
             log.debug("Failed to process orderbook delta")
+
+    def _handle_trade(self, data: dict) -> None:
+        """
+        Handle a real trade event from the Kalshi WebSocket.
+
+        In paper mode, forward to the paper engine so resting maker orders
+        can be filled based on real market activity.
+        """
+        if self.paper_engine is None:
+            return
+        try:
+            msg = data.get("msg", data)
+            ticker = msg.get("market_ticker", "")
+            # Kalshi trade messages contain: market_ticker, yes_price, no_price,
+            # count, taker_side, etc.
+            price_cents = msg.get("yes_price") or msg.get("no_price") or 0
+            count = msg.get("count", 0)
+            taker_side = msg.get("taker_side", "")
+
+            if not ticker or not count or not price_cents:
+                return
+
+            # The "side" of the trade from the perspective of the taker
+            side = taker_side if taker_side in ("yes", "no") else "yes"
+
+            self.paper_engine.process_trade(ticker, side, int(price_cents), int(count))
+        except Exception:
+            log.debug("Failed to process trade event for paper engine")
 
     def _handle_ticker(self, data: dict) -> None:
         """Handle a ticker update from WebSocket."""

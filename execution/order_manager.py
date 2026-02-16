@@ -221,6 +221,9 @@ class OrderManager:
                     if ticker is None or order.ticker == ticker:
                         order.status = "canceled"
                         count += 1
+            # Also remove resting orders from the paper engine queue
+            if self._paper_engine is not None:
+                count += self._paper_engine.cancel_resting_orders(ticker=ticker)
             log.info("Paper cancelled %d orders (ticker=%s)", count, ticker)
             return count
 
@@ -256,6 +259,7 @@ class OrderManager:
             Number of orders cancelled.
         """
         if self._paper_mode:
+            # cancel_all_orders already handles paper engine queue cancellation
             return await self.cancel_all_orders(ticker=ticker)
 
         try:
