@@ -42,9 +42,16 @@ class OrderManager:
         # Paper trading engine (set externally if paper_mode)
         self._paper_engine: Any = None
 
+        # Callback for paper fills → position tracker
+        self._on_paper_fill: Any = None
+
     def set_paper_engine(self, engine: Any) -> None:
         """Set the paper trading engine for simulated fills."""
         self._paper_engine = engine
+
+    def set_on_paper_fill(self, callback: Any) -> None:
+        """Register a callback for paper fills (e.g. position tracker update)."""
+        self._on_paper_fill = callback
 
     @property
     def paper_mode(self) -> bool:
@@ -397,6 +404,7 @@ class OrderManager:
         )
 
         # If we have a paper engine, try to simulate a fill
+        fill = None
         if self._paper_engine:
             fill = self._paper_engine.try_fill(request)
             if fill:
@@ -414,4 +422,12 @@ class OrderManager:
             order_id,
             order.status,
         )
+
+        # Notify position tracker of paper fill
+        if fill and self._on_paper_fill:
+            try:
+                self._on_paper_fill(fill)
+            except Exception:
+                log.exception("Paper fill callback failed")
+
         return order

@@ -145,6 +145,12 @@ class TradingBot:
         self.position_tracker = PositionTracker(self.client)
         self.position_tracker.initial_balance = initial_balance
 
+        # Wire paper fill callback now that position tracker exists
+        if config.PAPER_TRADING:
+            self.order_manager.set_on_paper_fill(
+                lambda fill: self.position_tracker.update_from_fill(fill)
+            )
+
         self.risk_manager = RiskManager(
             position_tracker=self.position_tracker,
             initial_balance=initial_balance,

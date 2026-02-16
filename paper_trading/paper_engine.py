@@ -4,6 +4,11 @@ Paper trading engine: simulates order fills against the real orderbook.
 In paper mode, no real orders are sent to Kalshi. Instead, the engine
 checks whether an order *would* have been filled based on the current
 orderbook state and returns a simulated fill.
+
+For maker (post_only) orders:
+- If the order would immediately cross the spread → rejected (realistic)
+- If the order is within the spread → fill at the order price as maker
+  (optimistic assumption that maker orders eventually get filled)
 """
 
 from __future__ import annotations
@@ -23,13 +28,12 @@ class PaperEngine:
     """
     Simulates order fills against the current orderbook state.
 
-    For limit orders:
-    - A buy YES order fills if the current best YES ask <= order price
-    - A sell YES order fills if the current best YES bid >= order price
-    - A buy NO order fills if the current best NO ask <= order price
+    For taker orders (post_only=False):
+    - Fills immediately at the best available price if the order crosses.
 
-    For post_only orders, the order is rejected (not filled) if it
-    would cross the spread (since post_only means maker-only).
+    For maker orders (post_only=True):
+    - Rejected if they would immediately cross (realistic Kalshi behavior).
+    - Otherwise, fills at the order price as maker (simulates queue fill).
     """
 
     def __init__(self, orderbook_manager: OrderBookManager) -> None:
@@ -63,36 +67,30 @@ class PaperEngine:
 
         order_price = order_price_cents / 100.0
 
-        # Determine if the order would fill
         would_fill = False
         fill_price = order_price
+        is_taker = True
 
         if side == "yes" and action == "buy":
-            # Buying YES: need to match against YES asks (derived from NO bids)
             best_ask = self._ob.get_best_yes_ask(ticker)
             if best_ask is not None:
                 ask_price, ask_qty = best_ask
                 if order_price >= ask_price:
                     if order.post_only:
-                        # post_only would cross — rejected
                         log.debug(
                             "Paper: post_only buy YES rejected (would cross at %.2f)",
                             ask_price,
                         )
                         return None
                     would_fill = True
-                    fill_price = ask_price  # Fill at the ask
-                    # Check sufficient depth
-                    if ask_qty < order.count:
-                        log.debug(
-                            "Paper: partial fill possible (%d available vs %d wanted)",
-                            ask_qty,
-                            order.count,
-                        )
-                        # Still fill, but in reality might be partial
+                    fill_price = ask_price
+                elif order.post_only:
+                    # Maker order within the spread — assume it fills
+                    would_fill = True
+                    fill_price = order_price
+                    is_taker = False
 
         elif side == "yes" and action == "sell":
-            # Selling YES: need a YES bid >= our price
             best_bid = self._ob.get_best_yes_bid(ticker)
             if best_bid is not None:
                 bid_price, bid_qty = best_bid
@@ -105,9 +103,12 @@ class PaperEngine:
                         return None
                     would_fill = True
                     fill_price = bid_price
+                elif order.post_only:
+                    would_fill = True
+                    fill_price = order_price
+                    is_taker = False
 
         elif side == "no" and action == "buy":
-            # Buying NO: need NO ask <= our price. NO ask = 1 - best YES bid
             best_no_ask = self._ob.get_best_no_ask(ticker)
             if best_no_ask is not None:
                 no_ask_price, no_ask_qty = best_no_ask
@@ -120,10 +121,12 @@ class PaperEngine:
                         return None
                     would_fill = True
                     fill_price = no_ask_price
+                elif order.post_only:
+                    would_fill = True
+                    fill_price = order_price
+                    is_taker = False
 
         elif side == "no" and action == "sell":
-            # Selling NO: need a NO bid >= our price
-            # NO bids are directly available
             book = self._ob._books.get(ticker)
             if book and book.no_bids:
                 best_no_bid = book.no_bids[0]
@@ -132,6 +135,10 @@ class PaperEngine:
                         return None
                     would_fill = True
                     fill_price = best_no_bid[0]
+                elif order.post_only:
+                    would_fill = True
+                    fill_price = order_price
+                    is_taker = False
 
         if not would_fill:
             log.debug(
@@ -157,19 +164,19 @@ class PaperEngine:
             yes_price=fill_price_cents if side == "yes" else (100 - fill_price_cents),
             no_price=fill_price_cents if side == "no" else (100 - fill_price_cents),
             created_time=datetime.now(timezone.utc).isoformat(),
-            is_taker=not order.post_only,  # If it filled, it was a taker (unless resting)
+            is_taker=is_taker,
         )
 
         self._fills.append(fill)
 
         log.info(
-            "Paper FILL: %s %s %s x%d @ %.2f (taker=%s)",
+            "Paper FILL: %s %s %s x%d @ %.2f (%s)",
             ticker,
             side,
             action,
             order.count,
             fill_price,
-            fill.is_taker,
+            "taker" if is_taker else "maker",
         )
 
         return fill
