@@ -98,13 +98,17 @@ class TradingBot:
 
         # 3. Get balance
         initial_balance = 0.0
-        try:
-            balance = await self.client.get_balance()
-            initial_balance = balance.available_balance_dollars
-            log.info("Account balance: $%.2f", initial_balance)
-        except Exception:
-            log.warning("Could not fetch balance — using default $1000 for paper")
-            initial_balance = 1000.0
+        if config.PAPER_TRADING:
+            initial_balance = config.PAPER_STARTING_BALANCE
+            log.info("Paper trading — using simulated balance: $%.2f", initial_balance)
+        else:
+            try:
+                balance = await self.client.get_balance()
+                initial_balance = balance.available_balance_dollars
+                log.info("Account balance: $%.2f", initial_balance)
+            except Exception:
+                log.warning("Could not fetch balance — using default $1000")
+                initial_balance = 1000.0
 
         # 4. Price feed
         self.price_feed = PriceFeed()

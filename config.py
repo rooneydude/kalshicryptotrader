@@ -67,6 +67,9 @@ elif TRADING_MODE == "full_live":
 # --- Dashboard ---
 DASHBOARD_PORT: int = int(os.getenv("PORT", "8080"))
 
+# --- Paper Trading ---
+PAPER_STARTING_BALANCE: float = float(os.getenv("PAPER_STARTING_BALANCE", "1000.0"))
+
 # --- Logging ---
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 LOG_FILE: str = os.getenv("LOG_FILE", "./logs/bot.log")
