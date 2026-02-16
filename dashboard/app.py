@@ -64,7 +64,10 @@ async def api_status() -> dict:
         "daily_pnl": round(summary["daily_pnl"], 4),
         "total_fees": round(summary["total_fees"], 4),
         "net_exposure": round(summary["net_exposure"], 4),
-        "active_positions": summary["active_positions"],
+        "active_positions": sum(
+            1 for t, p in pt.positions.items()
+            if p.net_contracts != 0 and t
+        ),
         "trades_today": summary["trades_today"],
         "crypto_prices": prices,
         "watched_markets": len(_bot._watched_tickers),
@@ -80,7 +83,7 @@ async def api_positions() -> list[dict]:
 
     positions = []
     for ticker, pos in _bot.position_tracker.positions.items():
-        if pos.net_contracts == 0:
+        if pos.net_contracts == 0 or not ticker:
             continue
         positions.append({
             "ticker": ticker,
